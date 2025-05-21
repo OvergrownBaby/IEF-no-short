@@ -46,7 +46,7 @@ fct_ret_est <- cluster_data_d %>%
   ) 
 fct_ret <- fct_ret_est %>%
   unnest(tidied) %>%
-  select(date, term, estimate) %>%
+  dplyr::select(date, term, estimate) %>%
   pivot_wider(names_from = term, values_from = estimate) %>%
   arrange(date) %>%
   setDT()
@@ -62,9 +62,9 @@ factor_cov_est <- as.character(calc_dates) %>% map(.progress = T, function(d){
   cov_data <- fct_ret[date >= first_obs & date <= as.Date(d)]
   t <- nrow(cov_data)
   if (t < settings$cov_set$obs-30) warning("INSUFFICIENT NUMBER OF OBSERVATIONS!!") # Only an issue with the first calc_date
-  cov_est <- cov_data %>% select(-date) %>% cov.wt(wt = tail(w_cor, t), cor=T, center=T, method = "unbiased")
+  cov_est <- cov_data %>% dplyr::select(-date) %>% cov.wt(wt = tail(w_cor, t), cor=T, center=T, method = "unbiased")
   cor_est <- cov_est$cor
-  var_est <- cov_data %>% select(-date) %>% cov.wt(wt = tail(w_var, t), cor=F, center=T, method = "unbiased") # inefficient solution but super fast with few factors
+  var_est <- cov_data %>% dplyr::select(-date) %>% cov.wt(wt = tail(w_var, t), cor=F, center=T, method = "unbiased") # inefficient solution but super fast with few factors
   sd_diag <- diag(sqrt(diag(var_est$cov)))
   # Prepare cov
   cov_est <- sd_diag %*% cor_est %*% sd_diag
@@ -77,7 +77,7 @@ names(factor_cov_est) <- as.character(calc_dates)
 # Specific Risk ---------------------------
 spec_risk <- fct_ret_est %>%
   mutate(id = data %>% map(~.x$id)) %>% 
-  select(id, date, res) %>% 
+  dplyr::select(id, date, res) %>% 
   unnest(c(id, res)) %>%
   arrange(id, date) %>%
   setDT()

@@ -1,3 +1,10 @@
+# no short
+project_nnls <- function(z, H) {
+  C   <- chol(H)           # H = C' C  (SPD)
+  rhs <- C %*% z
+  nnls::nnls(C, rhs)$x     # min??Cy ¡§C Cz???  s.t. y ?? 0
+}
+
 # Read configuration file ---------------
 read_config <- function(file) {
   lines <- readLines(file)

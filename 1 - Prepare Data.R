@@ -1,9 +1,9 @@
 # Risk-free rate --------------------
-risk_free <- fread("Data/ff3_m.csv", select = c("yyyymm", "RF")) %>% mutate(rf=RF/100, eom = paste0(yyyymm, "01") %>% as.Date("%Y%m%d") %>% ceiling_date(unit="month")-1) %>% select(eom, rf)
+risk_free <- fread("Data/ff3_m.csv", select = c("yyyymm", "RF")) %>% mutate(rf=RF/100, eom = paste0(yyyymm, "01") %>% as.Date("%Y%m%d") %>% ceiling_date(unit="month")-1) %>% dplyr::select(eom, rf)
 
 # Market -----------------------
 market <- fread("Data/market_returns.csv", colClasses = c("eom"="character"))
-market <- market[excntry == "USA", .(eom_ret = as.Date(eom, format="%Y%m%d"), mkt_vw_exc)]
+market <- market[excntry == "USA", .(eom_ret = as.Date(eom, format="%Y-%m-%d"), mkt_vw_exc)]
 
 # Wealth: Assumed portfolio growth --------------------
 wealth_func <- function(wealth_end, end, market, risk_free) {
@@ -25,7 +25,7 @@ if (FALSE) {
 cluster_labels <- fread("Data/Cluster Labels.csv")
 cluster_labels[, cluster := cluster %>% str_to_lower() %>% str_replace_all("\\s|-", "_")]
 factor_signs <- readxl::read_xlsx("Data/Factor Details.xlsx") %>%
-  select("characteristic"=abr_jkp, direction) %>%
+  dplyr::select("characteristic"=abr_jkp, direction) %>%
   filter(!is.na(characteristic)) %>%
   mutate(direction=direction %>% as.numeric) %>%
   setDT()
@@ -85,7 +85,7 @@ print(paste0("   Valid SIC code excludes ", round(mean(chars$sic=="") * 100, 2),
 chars <- chars[!is.na(sic)]
 
 # Feature screens
-feat_available <- chars %>% select(all_of(features)) %>% apply(1, function(x) sum(!is.na(x)))
+feat_available <- chars %>% dplyr::select(all_of(features)) %>% apply(1, function(x) sum(!is.na(x)))
 min_feat <- floor(length(features)*settings$screens$feat_pct)
 print(paste0("   At least ", settings$screens$feat_pct*100, "% of feature excludes ", round(mean(feat_available < min_feat)*100, 2), "% of the observations"))
 chars <- chars[feat_available >= min_feat]

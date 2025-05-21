@@ -2,6 +2,7 @@
 .Rhistory
 .RData
 .Ruserdata
+.Renviron
 ief_for_slides.R
 Data/
 Figures/
@@ -9,3 +10,7 @@ slurm_output/
 simulations/results/
 simulations/Depreceated code/
 scribbles/
+logs*/
+Rplots.pdf
+*.png
+*.csv

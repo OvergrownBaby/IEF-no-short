@@ -1,3 +1,62 @@
+# no short
+pfml_w_no_short <- function(data, dates, cov_list, lambda_list,
+                            gamma_rel, iter, risk_free, wealth, mu, aims,
+                            use_projection = TRUE) {
+
+  w_tbl <- data %>%
+           initial_weights_new("vw") %>%
+           left_join(data[, .(id, eom, tr_ld1)], by = c("id", "eom")) %>%
+           left_join(wealth[, .(eom, mu_ld1)], by = "eom")
+
+  for (d in as.character(dates)) {
+
+    ids    <- data[eom == as.Date(d), id]
+    sigma  <- cov_list[[d]] |> create_cov(ids = as.character(ids))
+    lambda <- lambda_list[[d]] |> create_lambda(ids = as.character(ids))
+    w_t    <- wealth[eom == as.Date(d), wealth]
+    rf_t   <- risk_free[eom == as.Date(d), rf]
+
+    if (nrow(sigma) != length(ids)) stop(sprintf("sigma dim = %d, ids = %d on %s", nrow(sigma), length(ids), d))
+
+    m      <- m_func(w = w_t, mu = mu, rf = rf_t,
+                     sigma_gam = sigma * gamma_rel,
+                     gam = gamma_rel, lambda = lambda, iter = iter)
+
+    w_cur  <- aims[w_tbl[eom == as.Date(d)], on = .(id, eom)]
+
+    g_t    <- (1 + w_cur$tr_ld1) / (1 + w_cur$mu_ld1)
+    z_t    <- m %*% (diag(g_t) %*% w_cur$w_start) +
+              (diag(nrow(m)) - m) %*% w_cur$w_aim
+
+    if (use_projection) {
+      H_t           <- gamma_rel * sigma + as.numeric(w_t) * lambda
+      w_cur$w_opt   <- project_nnls(z_t, H_t)
+    } else {
+      w_opt         <- pmax(z_t, 0)
+      w_cur$w_opt   <- w_opt / sum(w_opt) * sum(z_t)
+    }
+
+    next_month <- dates[match(as.Date(d), dates) + 1]
+    w_tbl <- w_cur[
+      ,.(id,
+         w_opt,
+         w_opt_ld1 = w_opt * (1 + tr_ld1) / (1 + mu_ld1))
+      ][w_tbl, on = "id"]
+
+    # overwrite in-month
+    w_tbl[!is.na(w_opt) & eom == as.Date(d), w := w_opt]
+
+    # carry to next month if it exists
+    if (!is.na(next_month)) {
+      w_tbl[!is.na(w_opt_ld1) & eom == next_month, w_start := w_opt_ld1]
+      w_tbl[eom == next_month & is.na(w_start), w_start := 0]
+    }
+    w_tbl[, c("w_opt", "w_opt_ld1") := NULL]
+  }
+  w_tbl
+}
+
+
 # Functions used in several methods ------------------------------------------------
 m_func <- function(w, mu, rf, sigma_gam, gam, lambda, iter) {
   n <- nrow(lambda)
@@ -621,7 +680,7 @@ pfml_implement <- function(
     proc.time()-start_time
   }
   # Implement final portfolio -----------------
-  best_hps <- hps %>% lapply(function(x) x$validation) %>% rbindlist() %>% select(-rank)
+  best_hps <- hps %>% lapply(function(x) x$validation) %>% rbindlist() %>% dplyr::select(-rank)
   best_hps[, rank := frank(-cum_obj), by = .(eom_ret)]
   best_hps <- best_hps[rank==1 & month(eom_ret)==12]
   # Check that hp range is appropriate
@@ -835,5 +894,3 @@ mp_implement <- function(data_tc, cov_list, lambda_list, rf,
   # Output
   list("hps"=validation, "best_hps"=optimal_hps, "w"=w, "pf"=pf)
 }
-
-

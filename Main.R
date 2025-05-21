@@ -114,7 +114,7 @@ settings <- list(
     gamma_rel = c(1, 5, 10, 20, 100)
   ),
   cov_set = list(
-    industries = T,   # Should we include industry dummies in the covariance matrix? No feasible when we look across size groups (because not all induistries have observations) 
+    industries = F,   # Should we include industry dummies in the covariance matrix? No feasible when we look across size groups (because not all induistries have observations) 
     obs = 252*10,    # Check tibble(t = 1:(settings$cov_set$obs), w = (0.5^(1/(settings$cov_set$hl_cor)))^t) %>% ggplot(aes(t, w)) + geom_point() + geom_hline(yintercept = 0)
     hl_cor = 252*3/2,  # Barra uses 48 months as half-life, seems high. https://www.alacra.com/alacra/help/barra_handbook_GEM.pdf
     hl_var = 252/2,

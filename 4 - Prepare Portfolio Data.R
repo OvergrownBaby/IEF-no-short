@@ -1,12 +1,27 @@
 # Add return predictions ---------------------------------
-for (h in 1:settings$pf$hps$m1$K) {
-  pred_data <- readRDS(paste0(get_from_path_model, "/model_", h, ".RDS")) |> 
-    lapply(function(x) x$pred) |>  
-    rbindlist() |>  
-    select(id, eom, pred) |> 
-    rename_with(~ paste0("pred_ld", h), .cols = "pred")
-  chars <- pred_data[chars, on = .(id, eom)]
+settings$pf$hps$m1$K <- 0
+
+# Only run prediction loading if K > 0
+if (settings$pf$hps$m1$K > 0) {
+  for (h in 1:settings$pf$hps$m1$K) {
+    pred_data <- readRDS(paste0(get_from_path_model, "/model_", h, ".RDS")) |> 
+      lapply(function(x) x$pred) |>  
+      rbindlist() |>  
+      select(id, eom, pred) |> 
+      rename_with(~ paste0("pred_ld", h), .cols = "pred")
+    chars <- pred_data[chars, on = .(id, eom)]
+  }
 }
+
+# # Add return predictions ---------------------------------
+# for (h in 1:settings$pf$hps$m1$K) {
+#   pred_data <- readRDS(paste0(get_from_path_model, "/model_", h, ".RDS")) |> 
+#     lapply(function(x) x$pred) |>  
+#     rbindlist() |>  
+#     select(id, eom, pred) |> 
+#     rename_with(~ paste0("pred_ld", h), .cols = "pred")
+#   chars <- pred_data[chars, on = .(id, eom)]
+# }
 
 # Create lambda list -------------------------------------
 lambda_dates <- unique(chars$eom)
