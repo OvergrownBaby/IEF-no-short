@@ -1,7 +1,7 @@
 #!/usr/bin/env Rscript
 # ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤
-#  Collector ¨C LS & LO frontiers + two ¦Ã-indifference curves (¦Ã = 10)
-#  Usage: Rscript plot.R [mode]  (mode = smoke, mini, or prod; default = prod)
+#  Collector ¨C LS & LO frontiers
+#  Usage: Rscript plot.R [mode] [wealth]  (mode = smoke, mini, or prod; default = prod)
 # ©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤©¤
 suppressPackageStartupMessages({
   library(data.table)
@@ -11,88 +11,76 @@ suppressPackageStartupMessages({
 ## 0 ? process command line arguments -----------------------------------------
 args <- commandArgs(trailingOnly = TRUE)
 MODE <- if (length(args) > 0) tolower(args[1]) else "prod"
+WEALTH <- if (length(args) > 1) as.numeric(args[2]) else 1e10
 
 # Validate mode
 if (!MODE %in% c("smoke", "mini", "prod")) {
   stop("Invalid mode. Please use 'smoke', 'mini', or 'prod'")
 }
 
-cat("Collecting and plotting data for mode:", MODE, "\n")
+# Validate wealth
+if (!is.finite(WEALTH) || WEALTH <= 0) {
+  stop("Invalid wealth. Please provide a positive numeric value")
+}
 
-## 1 ? locate point files for specified mode ----------------------------------
+cat("Collecting and plotting data for mode:", MODE, "and wealth:", format(WEALTH, scientific = TRUE), "\n")
+
+## 1 ? locate point files for specified mode and wealth -----------------------
 ief_root <- "Data/Generated/Portfolios/IEF_PML"
 
-pts <- list.files(
-          ief_root,
-          pattern   = "frontier_point\\.csv$",
-          recursive = TRUE,
-          full.names = TRUE
-        ) |>
-        keep(~ grepl(paste0("_", MODE), .x)) |>  # Filter by specified mode
-        map_dfr(readr::read_csv, show_col_types = FALSE) |>
-        arrange(constraint, gamma_rel)
+# Debug: Show what we're looking for
+wealth_pattern <- paste0("WEALTH", format(WEALTH, scientific = FALSE), "_")
+mode_pattern <- paste0("_", MODE)
+cat("Looking for wealth pattern:", wealth_pattern, "\n")
+cat("Looking for mode pattern:", mode_pattern, "\n")
+
+# Get all CSV files first
+all_csv_files <- list.files(
+  ief_root,
+  pattern = "frontier_point\\.csv$",
+  recursive = TRUE,
+  full.names = TRUE
+)
+
+cat("Found", length(all_csv_files), "total CSV files\n")
+if (length(all_csv_files) > 0) {
+  cat("Example paths:\n")
+  cat(paste(head(all_csv_files, 3), collapse = "\n"), "\n")
+}
+
+# Filter files
+matching_files <- all_csv_files |>
+  keep(~ grepl(wealth_pattern, .x) && grepl(mode_pattern, .x))
+
+cat("Found", length(matching_files), "matching files\n")
+if (length(matching_files) > 0) {
+  cat("Matching files:\n")
+  cat(paste(matching_files, collapse = "\n"), "\n")
+}
+
+if (length(matching_files) == 0) {
+  stop("No matching CSV files found for mode: ", MODE, " and wealth: ", format(WEALTH, scientific = TRUE))
+}
+
+# Read and combine the CSV files
+pts <- matching_files |>
+  map_dfr(readr::read_csv, show_col_types = FALSE)
+
+# Debug: Show columns and first few rows
+cat("Columns in data:", paste(names(pts), collapse = ", "), "\n")
+cat("Number of rows:", nrow(pts), "\n")
 
 if (nrow(pts) == 0) {
-  stop("No data files found for mode: ", MODE)
+  stop("No data found in CSV files")
 }
 
-cat("Found", nrow(pts), "data points for mode:", MODE, "\n")
+# Now we can safely arrange
+pts <- pts |> arrange(constraint, gamma_rel)
 
-## 2 ? choose the fixed ¦Ã for indifference curves -----------------------------
-GAMMA_TARGET <- 10          # ¦Ã value used in the published Panel A
+cat("Found", nrow(pts), "data points for mode:", MODE, "and wealth:", format(WEALTH, scientific = TRUE), "\n")
 
-ref <- pts |>
-       filter(gamma_rel == GAMMA_TARGET) |>
-       transmute(
-         constraint,
-         gamma  = gamma_rel,
-         sigma0 = sigma,
-         mu0    = r_tc,
-         C      = mu0 - 0.5 * gamma * sigma0^2
-       )
-
-# Check if GAMMA_TARGET exists in the data
-if (nrow(ref) == 0) {
-  warning("Gamma target ", GAMMA_TARGET, " not found in the data. Using highest available gamma.")
-  highest_gamma <- max(pts$gamma_rel)
-  cat("Using gamma =", highest_gamma, "instead\n")
-  
-  ref <- pts |>
-         filter(gamma_rel == highest_gamma) |>
-         transmute(
-           constraint,
-           gamma  = gamma_rel,
-           sigma0 = sigma,
-           mu0    = r_tc,
-           C      = mu0 - 0.5 * gamma * sigma0^2
-         )
-}
-
-## 3 ? build ¦Ì = C + ? ¦Ã ¦Ò? for each constraint ------------------------------
-sigma_grid <- seq(0, 1.05 * max(pts$sigma), length.out = 200)
-
-indiff <- ref |>
-  mutate(curve_id = constraint) |>
-  rowwise() |>
-  mutate(curve = list(
-           tibble(
-             sigma    = sigma_grid,
-             mu       = C + 0.5 * gamma * sigma^2,
-             curve_ids = curve_id          # tag for grouping
-           )
-         )) |>
-  unnest(curve) |>
-  ungroup()
-
-## 4 ? plot -------------------------------------------------------------------
+## 2 ? plot -------------------------------------------------------------------
 p <- ggplot() +
-       ## dashed iso-utility curves ¡ª **two separate groups**
-       geom_line(
-         data      = indiff,
-         aes(x = sigma, y = mu, group = curve_id),   # ¡û group!
-         colour    = "grey60",
-         linetype  = "dashed"
-       ) +
        ## efficient frontiers
        geom_path(
          data  = pts,
@@ -115,18 +103,18 @@ p <- ggplot() +
        scale_shape_discrete(name = "γ") +
        labs(
          title = paste0("Portfolio-ML implementable efficient frontiers (", toupper(MODE), " mode)"),
-         subtitle = "(long-short vs long-only)",
+         subtitle = paste0("(long-short vs long-only, wealth = ", format(WEALTH, scientific = TRUE), ")"),
          x     = "Volatility σ (annualised)",
          y     = "Excess return μ net of TC (annualised)"
        ) +
        theme_bw(base_size = 11) +
        theme(legend.position = "bottom")
 
-## 5 ? save artefacts ---------------------------------------------------------
-png_name <- paste0("PortfolioML_frontiers_", MODE, "_with_IC_gamma", GAMMA_TARGET, ".png")
-csv_name <- paste0("PortfolioML_frontiers_", MODE, ".csv")
+## 3 ? save artefacts ---------------------------------------------------------
+png_name <- paste0("PortfolioML_frontiers_", MODE, "_wealth", format(WEALTH, scientific = FALSE), ".png")
+csv_name <- paste0("PortfolioML_frontiers_", MODE, "_wealth", format(WEALTH, scientific = FALSE), ".csv")
 
 ggsave(png_name, p, width = 8, height = 6)
 fwrite(pts, csv_name)
 
-cat("?  wrote ", png_name, " and ", csv_name, "\n", sep = "")
+cat("✓ wrote ", png_name, " and ", csv_name, "\n", sep = "")

@@ -25,11 +25,24 @@ pfml_w_no_short <- function(data, dates, cov_list, lambda_list,
     w_cur  <- aims[w_tbl[eom == as.Date(d)], on = .(id, eom)]
 
     g_t    <- (1 + w_cur$tr_ld1) / (1 + w_cur$mu_ld1)
-    z_t    <- m %*% (diag(g_t) %*% w_cur$w_start) +
+    z_t    <- m %*% 
+              w_cur$w_start
+              +
               (diag(nrow(m)) - m) %*% w_cur$w_aim
 
     if (use_projection) {
       H_t           <- gamma_rel * sigma + as.numeric(w_t) * lambda
+      neg_share   <- mean(z_t < 0)              # % of assets whose weight is negative
+      neg_weight  <- sum(abs(z_t[z_t < 0]))     # total $ in shorts
+      pos_weight  <- sum(z_t[z_t > 0])          # total $ in longs   (can be < 0)
+      gross_expo  <- pos_weight + neg_weight    # L1 norm  |¦Ð|
+      net_expo    <- sum(z_t)                   # 1' ¦Ð  (what you print now)
+
+      Hz          <- H_t %*% z_t                # gradient at z_t
+      all_Hz_neg  <- all(Hz <= 0 + 1e-10)       # TRUE ? 0 is the projection
+      cat(sprintf(
+        "%s  neg%%=%.2f  net=%.3e  gross=%.3e  all(H z)<=0? %s\n",
+        d, neg_share, net_expo, gross_expo, all_Hz_neg))
       w_cur$w_opt   <- project_nnls(z_t, H_t)
     } else {
       w_opt         <- pmax(z_t, 0)

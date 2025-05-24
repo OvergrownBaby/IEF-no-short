@@ -24,30 +24,35 @@ gamma_val             <- as.numeric(Sys.getenv("GAMMA"))
 stopifnot(is.finite(gamma_val), gamma_val > 0)
 settings$ef$gamma_rel <- pf_set$gamma_rel <- gamma_val   # length-one
 
-## which “mode” (size): smoke | mini | prod   – passed as IEF_MODE
+## which "mode" (size): smoke | mini | prod   – passed as IEF_MODE
 MODE         <- tolower(Sys.getenv("IEF_MODE", "prod"))
 IS_SMOKETEST <- MODE == "smoke"
 IS_MINI      <- MODE == "mini"
 IS_PROD      <- MODE == "prod"
 run_sub      <- IS_SMOKETEST           # Prepare-Data.R looks at this flag
 
+## wealth parameter from environment
+wealth_val <- as.numeric(Sys.getenv("WEALTH", "1e10"))
+stopifnot(is.finite(wealth_val), wealth_val > 0)
+
 ## mode-specific tweaks *only* for speed / memory
 if (IS_SMOKETEST) {
   settings$screens$size_screen <- "perc_low50_high100_min50"
-  pf_set$wealth                <- 1e10
+  pf_set$wealth                <- wealth_val
   settings$pf_ml$p_vec         <- 2^5
   settings$cov_set$industries  <- FALSE
   if (Sys.getenv("SUBSET_N") == "") Sys.setenv(SUBSET_N = "1000")
 }
 if (IS_MINI) {
   settings$screens$size_screen <- "perc_low20_high100_min150"
-  pf_set$wealth                <- 1e10
+  pf_set$wealth                <- wealth_val
   settings$pf_ml$p_vec         <- 2^7
   settings$cov_set$industries  <- FALSE
 }
 
 if (IS_PROD) {
   settings$screens$size_screen <- "all"
+  pf_set$wealth                <- wealth_val
 }
 
 ## force SINGLE wealth level
@@ -106,17 +111,9 @@ toc()
 # ════════════════════════════════════════════════════════════════════════════
 # 3  Weight recursion  (Long-short  &  Long-only)
 # ════════════════════════════════════════════════════════════════════════════
-tic("Weight iteration (LS & LO)")
-weights_ls <- chars[eom %in% dates_oos & valid == TRUE] %>%
-  pfml_w(dates        = dates_oos,
-         cov_list     = barra_cov,
-         lambda_list  = lambda_list,
-         gamma_rel    = gamma_val,
-         iter         = 10,
-         risk_free    = risk_free,
-         wealth       = wealth,
-         mu           = pf_set$mu,
-         aims         = pfml$aims)
+tic("Weight iteration (LO only)")
+# Long-short weights are already computed in pfml_implement, so reuse them
+weights_ls <- pfml$w
 
 weights_lo <- chars[eom %in% dates_oos & valid == TRUE] %>%
   pfml_w_no_short(dates          = dates_oos,
@@ -130,25 +127,6 @@ weights_lo <- chars[eom %in% dates_oos & valid == TRUE] %>%
                   aims           = pfml$aims,
                   use_projection = TRUE)
 toc()
-
-# # ════════════════════════════════════════════════════════════════════════════
-# # 4  Summarise → one point per variant
-# # ════════════════════════════════════════════════════════════════════════════
-# sum_point <- function(w_tbl, tag) {
-#   w_tbl %>%
-#     pf_ts_fun(data = chars, wealth = wealth, gam = gamma_val) %>%
-#     summarise(
-#       gamma_rel  = gamma_val,
-#       wealth_end = pf_set$wealth,
-#       constraint = tag,
-#       r     = mean(r)  * 12,
-#       sd    = sd(r)    * sqrt(12),
-#       tc    = mean(tc) * 12,
-#       r_tc  = mean(r - tc) * 12,
-#       sr    = mean(r - tc) / sd(r) * sqrt(12),
-#       obj   = (mean(r) - 0.5 * var(r) * gamma_val - mean(tc)) * 12
-#     )
-# }
 
 # ─────────────────────────────────────────────────────────────
 # 4  Summarise → one point per variant      (add diagnostics)
@@ -169,39 +147,6 @@ check_finite <- function(x, tag) {
 
 check_finite(weights_ls, "long_short")
 check_finite(weights_lo, "long_only")
-# sum_point <- function(w_tbl, tag) {
-
-#   ts <- w_tbl %>%                            # monthly P&L path
-#         pf_ts_fun(data   = chars,
-#                    wealth = wealth,
-#                    gam    = gamma_val)
-
-#   ## ── five-line quick check ────────────────────────────────
-#   cat(sprintf("[diag]  %-10s  obs=%4d   NA(r)=%3d   first=%s   last=%s\n",
-#               tag,
-#               nrow(ts),
-#               sum(is.na(ts$r)),
-#               format(min(ts$eom_ret)),
-#               format(max(ts$eom_ret))))
-#   ## ─────────────────────────────────────────────────────────
-
-#   ts %>%
-#     summarise(
-#       gamma_rel  = gamma_val,
-#       wealth_end = pf_set$wealth,
-#       constraint = tag,
-#       r     = mean(r,  na.rm = TRUE) * 12,
-#       sigma = sd(r,    na.rm = TRUE) * sqrt(12),   # ← renamed
-#       tc    = mean(tc, na.rm = TRUE) * 12,
-#       r_tc  = mean(r - tc, na.rm = TRUE) * 12,
-#       sr    = mean(r - tc, na.rm = TRUE) /
-#               sd(r, na.rm = TRUE) * sqrt(12),
-#       obj   = (mean(r, na.rm = TRUE) -
-#               0.5 * var(r, na.rm = TRUE) * gamma_val -
-#               mean(tc, na.rm = TRUE)) * 12
-#     )
-
-# }
 
 sum_point <- function(w_tbl, tag) {
 
